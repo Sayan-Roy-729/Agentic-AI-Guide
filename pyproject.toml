@@ -1,0 +1,31 @@
+[project]
+name = "agentic-ai-guide"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "ddgs>=9.10.0",
+    "hf-xet>=1.1.10",
+    "ipykernel>=6.29.5",
+    "langchain>=0.3.25",
+    "langchain-community>=0.4.1",
+    "langchain-groq>=0.3.2",
+    "langchain-huggingface>=0.3.1",
+    "langchain-openai>=0.3.28",
+    "langchain-tavily>=0.2.3",
+    "langgraph>=0.4.8",
+    "langgraph-checkpoint-sqlite==2.0.2",
+    "langsmith>=0.3.45",
+    "notebook>=7.4.4",
+    "python-dotenv>=1.1.0",
+    "sentence-transformers>=5.1.1",
+    "streamlit>=1.50.0",
+]
+
+[tool.uv.workspace]
+members = [
+    "03-MCP Guide",
+    "04-Remote MCP Server",
+    "05-CrewAI Tutorial",
+]
