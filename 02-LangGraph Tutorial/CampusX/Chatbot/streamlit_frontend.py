@@ -1,7 +1,8 @@
 import uuid
+import queue
 import streamlit as st
-from langgraph_backend import chatbot, retrieve_all_threads
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langgraph_backend2 import chatbot, retrieve_all_threads, submit_async_task
 
 #################################################################################
 ######################## ! Utility Functions ! ##################################
@@ -51,15 +52,16 @@ if st.sidebar.button("New Chat"):
     reset_chat()
 
 st.sidebar.header("My Conversations")
-
 for thread_id in st.session_state["chat_threads"][::-1]:
-    if st.sidebar.button(thread_id):
+    if st.sidebar.button(str(thread_id)):
         st.session_state["thread_id"] = thread_id
         messages = load_conversation(thread_id)
-        st.session_state["message_history"] = [
-            {"role": "user" if isinstance(msg, HumanMessage) else "assistant", "content": msg.content}
-            for msg in messages
-        ]
+
+        temp_messages = []
+        for msg in messages:
+            role = "user" if isinstance(msg, HumanMessage) else "assistant"
+            temp_messages.append({"role": role, "content": msg.content})
+        st.session_state["message_history"] = temp_messages
 
 
 #####################################################################################
@@ -131,11 +133,56 @@ if user_input:
         status_holder = {"box": None}
 
         def ai_only_stream():
-            for message_chunk, metadata in chatbot.stream(
-                {"messages": [HumanMessage(content=user_input)]},
-                config=CONFIG,
-                stream_mode="messages",
-            ):
+            # for message_chunk, metadata in chatbot.astream(
+            #     {"messages": [HumanMessage(content=user_input)]},
+            #     config=CONFIG,
+            #     stream_mode="messages",
+            # ):
+            #     # Lazily create & update the SAME status container when any tool runs
+            #     if isinstance(message_chunk, ToolMessage):
+            #         tool_name = getattr(message_chunk, "name", "tool")
+            #         if status_holder["box"] is None:
+            #             status_holder["box"] = st.status(
+            #                 f"🔧 Using `{tool_name}` …", expanded=True
+            #             )
+            #         else:
+            #             status_holder["box"].update(
+            #                 label=f"🔧 Using `{tool_name}` …",
+            #                 state="running",
+            #                 expanded=True,
+            #             )
+
+            #     # Stream ONLY assistant tokens
+            #     if isinstance(message_chunk, AIMessage):
+            #         yield message_chunk.content
+
+            event_queue: queue.Queue = queue.Queue()
+
+            async def run_stream():
+                try:
+                    async for message_chunk, metadata in chatbot.astream(
+                        {"messages": [HumanMessage(content=user_input)]},
+                        config=CONFIG,
+                        stream_mode="messages",
+                    ):
+                        event_queue.put((message_chunk, metadata))
+                except Exception as e:
+                    event_queue.put(f"error: {e}")
+                finally:
+                    event_queue.put(None)
+
+            submit_async_task(run_stream())
+
+            while True:
+                item = event_queue.get()
+                if item is None:
+                    break
+
+                if isinstance(item, str) and item.startswith("error:"):
+                    raise Exception(item)
+                
+                message_chunk, metadata = item
+
                 # Lazily create & update the SAME status container when any tool runs
                 if isinstance(message_chunk, ToolMessage):
                     tool_name = getattr(message_chunk, "name", "tool")
@@ -151,7 +198,7 @@ if user_input:
                         )
 
                 # Stream ONLY assistant tokens
-                if isinstance(message_chunk, AIMessage):
+                if isinstance(message_chunk, AIMessage) and message_chunk.content:
                     yield message_chunk.content
 
         ai_message = st.write_stream(ai_only_stream())
